@@ -1,0 +1,6 @@
+pandas
+requests
+pytz
+dotenv
+python-dotenv
+websocket
