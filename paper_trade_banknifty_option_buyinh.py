@@ -16,7 +16,7 @@ ACCESS_TOKEN=os.getenv("ACCESS_TOKEN")
 CLIENT_ID=os.getenv("CLIENT_ID")
 BASE_URL = "https://api.dhan.co/v2"
 FNO_MASTER_URL = f"{BASE_URL}/instrument/NSE_FNO"
-IDX_INTRADAY_URL=f"{BASE_URL}/charts/intraday"
+IDX_INTRADAY_URL="https://api.dhan.co/v2/charts/intraday"
 GSHEET_URL=os.getenv("SHEETS")
 
 IST = pytz.timezone("Asia/Kolkata")
@@ -26,6 +26,10 @@ HEADERS = {
     "Content-Type": "application/json",
     "access-token": ACCESS_TOKEN,
     "client-id": "1107425275"
+}
+IDXHEADERS = {
+    "Content-Type": "application/json",
+    "access-token": ACCESS_TOKEN,
 }
 
 # ================= STRATEGY CONFIG =================
@@ -59,7 +63,7 @@ def log_trade_sheet(
     marked_line, tsl, sl
 ):
     payload = {
-        "type": "TRADE",
+        "sheet": "BankNiftyTrade",
         "row": [
             datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S"),
             symbol,
@@ -70,8 +74,8 @@ def log_trade_sheet(
             exitp,
             lots,
             qty,
-            round(pnl, 2),
-            round(cum_pnl, 2),
+            pnl, 2,
+            cum_pnl, 2,
             entry_reason,
             exit_reason,
             marked_line,
@@ -94,13 +98,13 @@ def log_day_sheet(
     exit_reason, notes=""
 ):
     payload = {
-        "type": "LOGGER",
+        "sheet": "BankNiftyLogger",
         "row": [
             trade_date,
             "banknifty_option_buying",
             atm,
             start_time,
-            end_time,
+            end_time,   
             total_trades,
             ce_trades,
             pe_trades,
@@ -141,7 +145,7 @@ def fetch_index_intraday(trade_date: str):
         "toDate": f"{trade_date} 09:16:00"
     }
 
-    r = requests.post(IDX_INTRADAY_URL, headers=HEADERS, json=payload)
+    r = requests.post(IDX_INTRADAY_URL, headers=IDXHEADERS, json=payload)
     r.raise_for_status()
     data = r.json()
 
@@ -256,7 +260,8 @@ def normalize_tick(tick):
         "security_id": tick["security_id"],
         "price": float(tick["LTP"]),
         "avg": float(tick["avg_price"]),
-        "time": tick["LTT"]
+        "time": tick["LTT"],
+        "volume": tick["volume"]
     }
 
 
@@ -331,7 +336,7 @@ def execute_entry(state, price):
 def execute_exit(state, price, reason):
     global cumulative_pnl, total_trades, ce_trades, pe_trades, max_profit, max_dd, current_lot
 
-    pnl = (price - state.entry_price) * state.lots
+    pnl = (price - state.entry_price) * state.lots 
     cumulative_pnl += pnl
     state.pnl += pnl
     total_trades += 1
@@ -385,11 +390,18 @@ def process_strategy(sec, price, avg, candle, state):
     if not trading_enabled:
         return
 
-    # ---------------- MARK FIRST CANDLE ----------------
-    if state.marked_price is None and candle:
-        state.marked_price = candle["close"]
-        print(f"📌 MARKED {sec} @ {state.marked_price}")
+    # ---------------- WAIT FOR MARKED LINE ----------------
+    if state.marked_price is None:
+        if candle:
+            state.marked_price = candle["close"]
+            print(f"📌 MARKED {sec} @ {state.marked_price}")
         return
+
+    # ---------------- MARK FIRST CANDLE ----------------
+    #if state.marked_price is None and candle:
+     #   state.marked_price = candle["close"]
+      #  print(f"📌 MARKED {sec} @ {state.marked_price}")
+       # return
 
     # ---------------- REENTRY RESET ----------------
     if not state.reentry_allowed and price < state.marked_price:
@@ -528,7 +540,7 @@ if __name__ == "__main__":
         states[sec] = OptionState(sec)
 
     # ---------------- START FEED ----------------
-    threading.Thread(target=feed.run_forever, daemon=True).start()
+    feed.run_forever()
 
     # ---------------- MAIN LOOP ----------------
     while True:
